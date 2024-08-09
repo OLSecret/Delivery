@@ -1,17 +1,17 @@
 # Delivery Service
 
 
-
-
 ## Package Registration Service
 A FastAPI REST service that uses MySQL, Redis, Pydantic, SQLAlchemy, and async pytests, built as a Docker Compose microservice.
 
 ## Features
-Package Registration
-Register new packages with their details.
+### Package Registration
+Register new packages with their details: name, type, weight, value.
 
-## View Registered Packages
-Retrieve a list of all registered packages.
+### View Registered Packages
+- Retrieve a list of all package types and their id.
+- Retrieve a list of all registered packages of a certain user.
+- Retrieve a package's data by package id.
 
 ## Periodic Task
 A scheduled task that updates the delivery costs for packages in the database by fetching the current USD to RUB exchange rate and recalculating costs. This task runs every 5 minutes.
