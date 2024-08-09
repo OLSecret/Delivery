@@ -18,6 +18,7 @@ redis_client = redis.Redis(host='redis', port=6379, db=0)
 
 # Fetch and cache the exchange rate
 async def fetch_exchange_rate():
+    """ Fetches the current USD to RUB exchange rate and stores it in a Redis cache."""
     async with httpx.AsyncClient() as client:
         response = await client.get("https://www.cbr-xml-daily.ru/daily_json.js")
         data = response.json()
@@ -27,6 +28,7 @@ async def fetch_exchange_rate():
 
 @app.on_event("startup")
 def on_startup():
+    """Initializes the application on startup by creating all database tables and registering package types."""
     # Create all tables in the database based on the above models
     Base.metadata.create_all(bind=engine)
     # Ensure all package types are registered in the database
@@ -36,6 +38,7 @@ def on_startup():
 @app.on_event("startup")
 @repeat_every(seconds=300)  # 5 minutes
 async def update_delivery_costs():
+    """Periodically updates the delivery costs for packages."""
     db = SessionLocal()
     try:
         usd_to_rub = redis_client.get("usd_to_rub")

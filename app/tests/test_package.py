@@ -1,3 +1,4 @@
+import asyncio
 import httpx
 import pytest
 from sqlalchemy import text, delete
@@ -50,42 +51,38 @@ async def add_packages_for_user():
         {"name": "Package 9", "type_id": 2, "user_id": user_id, "weight": 18.5, "value": 20.0, "delivery_cost": 5.0},
     ]
 
-    #async with async_session() as db:
-    #    for package in packages_to_add:
-    #        db_package = Package(**package)
-    #        await db.add(db_package)
-    #    await db.commit()
     async_session_instance = AsyncSessionLocal()
-    async with async_session_instance.begin():
-        for package in packages_to_add:
-            db_package = Package(**package)
-            async_session_instance.add(db_package)
-        await async_session_instance.commit()
 
-    yield
-
-    # Clean up the added packages
-    #async with async_session() as db:
-    #    await db.query(Package).filter(Package.user_id == user_id).delete()
-    #    await db.commit()
-    # Clean up the added packages
-    async_session_instance = AsyncSessionLocal()
-    async with async_session_instance.begin():
-        #await async_session_instance.query(Package).filter(Package.user_id == user_id).delete()
-        await async_session_instance.execute(delete(Package).where(Package.user_id == user_id))
-        await async_session_instance.commit()
-    await async_session_instance.close()
+    try:
+        async with async_session_instance.begin():
+            for package in packages_to_add:
+                db_package = Package(**package)
+                async_session_instance.add(db_package)
+            await async_session_instance.commit()
+        try:
+            yield
+        # Clean up the added packages
+        finally:
+            async with async_session_instance.begin():
+                try:
+                    await async_session_instance.execute(delete(Package).where(Package.user_id == user_id))
+                    await async_session_instance.commit()
+                except Exception as e:
+                    await async_session_instance.rollback()
+                    raise
+    finally:
+        await async_session_instance.close()
 
 
 # Test function to check the database connection
-#@pytest.mark.asyncio
-#async def test_database_connection():
-#    engine = create_async_engine(ASYNC_DATABASE_URL, echo=True, future=True)
+@pytest.mark.asyncio
+async def test_database_connection():
+    engine = create_async_engine(ASYNC_DATABASE_URL, echo=True, future=True)
 
-#    async with engine.connect() as conn:
-#        result = await conn.execute(text("SHOW TABLES"))
-#        tables = result.fetchall()
-#        assert tables is not None
+    async with engine.connect() as conn:
+        result = await conn.execute(text("SHOW TABLES"))
+        tables = result.fetchall()
+        assert tables is not None
 
 # Test function to verify package registration with a valid type_id
 @pytest.mark.asyncio
@@ -254,7 +251,7 @@ async def test_show_packages_no_packages(app_client):
 
 @pytest.mark.asyncio
 async def test_show_packages_offset_limit_few_packages(app_client):
-    user_id = 164
+    user_id = 124
     package_type = 1
     offset = 5
     limit = 3
@@ -290,10 +287,10 @@ async def get_real_limit(package_type, user_id):
 
 
 @pytest.mark.asyncio
-async def test_show_packages_0offset_limit_lots_packages(app_client, add_packages_for_user):
+async def test_show_packages_offset_limit_lots_packages(app_client, add_packages_for_user):
     user_id = 164
     package_type = 1
-    offset = 0
+    offset = 2
     limit = 3
 
     # Make the POST request to the /show endpoint with the user_id and package_type
@@ -303,9 +300,9 @@ async def test_show_packages_0offset_limit_lots_packages(app_client, add_package
         "offset": offset,
         "limit": limit,
     })
+    #await asyncio.wait([response])
+
     assert response.status_code == 200
-    #response_json = response.json()
-    #packages = response_json["packages"]
     packages = response.json()
     length = await get_real_limit(package_type, user_id)
     # Assert that the length of the packages list is equal to the limit
@@ -314,58 +311,10 @@ async def test_show_packages_0offset_limit_lots_packages(app_client, add_package
     # Assert that the packages are of the correct type
     for package in packages:
         assert package.get("type_id") == package_type
-        #assert package.package_type == package_type
-        #assert package["type"] == package_type
 
     # Assert that the packages are for the correct user
     for package in packages:
         assert package.get("user_id") == user_id
-        #assert package.user_id == user_id
-        #assert package["user_id"] == user_id
-
-    # Assert that the packages are returned in the correct order
-    #for i, package in enumerate(packages):
-    #    assert package.get("id") == i + offset + 1
-        #assert package.id == i + offset + 1
-        #assert package["id"] == i + offset + 1
-
-
-@pytest.mark.asyncio
-async def test_show_packages_offset_limit_lots_packages(app_client, add_packages_for_user):
-    user_id = 164
-    package_type = 1
-    offset = 2
-    limit = 4
-
-    # Make the POST request to the /show endpoint with the user_id and package_type
-    response = await app_client.post("/show", json={
-        "user_id": user_id,
-        "package_type": package_type,
-        "offset": offset,
-        "limit": limit,
-    })
-    assert response.status_code == 200
-    packages = response.json()
-    #response_json = response.json()
-    #packages = response_json["packages"]
-    length = await get_real_limit(package_type, user_id)
-    # Assert that the length of the packages list is equal to the limit
-    assert len(packages) == min(limit, length)
-
-    # Assert that the packages are of the correct type
-    for package in packages:
-        #assert package["type"] == package_type
-        assert package.get("type_id") == package_type
-
-    # Assert that the packages are for the correct user
-    for package in packages:
-        #assert package["user_id"] == user_id
-        assert package.get("user_id") == user_id
-
-    # Assert that the packages are returned in the correct order
-    #for i, package in enumerate(packages):
-    #    assert package["id"] == i + offset + 1
-
 
 
 @pytest.mark.asyncio
@@ -382,26 +331,4 @@ async def test_get_package_invalid_id(app_client):
     response = await app_client.get(f"/package/{package_id}")
     assert response.status_code == 422
     error_response = response.json()
-    #assert error_response["detail"] == "Invalid type for path parameter 'package_id'. Expected 'int'."
     assert error_response["detail"][0]["msg"] == "Input should be a valid integer, unable to parse string as an integer"
-#@pytest.mark.asyncio
-#async def test_get_package(app_client):
-#    package_id = await test_register_package_valid_type(app_client)
-#    # Make the GET request to the /package/{package_id} endpoint
-#    response = await app_client.get(f"/package/{package_id}")
-#    assert response.status_code == 200
-
-    # Get the JSON response data
-#    package = response.json()
-
-    # Verify the package data
-#    expected_data = {'delivery_cost': None,
-#                     'id': package_id,
-#                     'name': 'Valid Package',
-#                     'type_id': 1,
-#                     'value': 100.0,
-#                     'weight': 2.5,
-#                     'user_id': 164,
-#                    }
-
-#    assert package == expected_data
